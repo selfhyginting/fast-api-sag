@@ -19,14 +19,13 @@ def get_config():
 
 class User(BaseModel):
     username:str
-    email:str
     password:str
 
     class Config:
+        orm_mode=True
         schema_extra={
             "example":{    
                 "username" : "your username",
-                "email" : "youremail@gmail.com",
                 "password" : "your password"
             }
         }
@@ -41,7 +40,7 @@ class UserLogin(BaseModel):
                 "password"  : "your password"
             }
         }
-users=[]
+
 
 class Item(BaseModel):
     id:int 
@@ -52,35 +51,51 @@ class Item(BaseModel):
     
     class Config:
         orm_mode=True
+        schema_extra={
+            "example":{    
+                "username" : "your username",
+                "password" : "your password"
+            }
+        }
 
 db=Session()
 
-@app.get('/users',response_model=List[User])
+@app.get('/users',response_model=List[User],status_code=status.HTTP_200_OK)
 def get_users():
+    users=db.query(models.User).all()
     return users
 
-@app.post('/users/signup', status_code=status.HTTP_201_CREATED)
-def create_user(user:User):
-    new_user={
-         "username" : user.username,
-        "email" :   user.email,
-        "password" : user.password
-    }
+@app.get('/users/{username}',response_model=List[User], status_code=status.HTTP_200_OK)
+def getItemByUsername(username:str):
+    user=db.query(models.User).filter(models.User.username==username).first()
+    return user
 
-    users.append(new_user)
+@app.post('/users/signup', response_model=List[User], status_code=status.HTTP_201_CREATED)
+def create_user(user:User):
+    db_item=db.query(models.User).filter(models.User.username==user.username).first()
+    if db_item is not None:
+        raise HTTPException(status_code=400,detail="item already exists")
+    
+    new_user=models.User(
+        username=user.username,
+        password=user.password
+    )
+    db.add(new_user)
+    db.commit()
+
     return "user is created"
 
 @app.post('/users/login')
 def login(user:UserLogin, jwtToken:AuthJWT=Depends()):
-    for us in users:
-        if (us["username"]==user.username) and (us["password"]==user.password):
-            access_token=jwtToken.create_access_token(subject=user.username)
-            refresh_token=jwtToken.create_refresh_token(subject=user.username)
-            return {
-                "access_token" :access_token,
-                "refresh_token" :refresh_token
-            }
-        raise HTTPException(status_code='401',detail='invalid username or password')
+    userlogin=db.query(models.User).filter(models.User.username==user.username, models.User.password==user.password).first()
+    if userlogin is not None:
+        access_token=jwtToken.create_access_token(subject=user.username)
+        refresh_token=jwtToken.create_refresh_token(subject=user.username)
+        return {
+            "access_token" :access_token,
+            "refresh_token" :refresh_token
+        }
+    raise HTTPException(status_code=401,detail="invalid username or password")
 
 @app.get('/new_token')
 def create_NewToken(jwtToken:AuthJWT=Depends()):
@@ -106,12 +121,12 @@ def getItems():
     items=db.query(models.Item).all()
     return items
 
-@app.get('/items/{item_id}',response_model=Item, status_code=status.HTTP_200_OK)
+@app.get('/items/{item_id}',response_model=List[Item], status_code=status.HTTP_200_OK)
 def getItemById(item_id:int):
     item=db.query(models.Item).filter(models.Item.id==item_id).first()
     return item 
 
-@app.post('/items',response_model=Item,status_code=status.HTTP_201_CREATED)
+@app.post('/items',status_code=status.HTTP_201_CREATED)
 def createItem(item:Item, jwtToken:AuthJWT=Depends()):
     try:
         jwtToken.jwt_required()
@@ -137,14 +152,20 @@ def createItem(item:Item, jwtToken:AuthJWT=Depends()):
         db.commit()
 
         return {
-            "new_item_added" : new_item,
+            "new_item_added" : {
+                "id" : new_item.id,
+                "name" : new_item.name,
+                "description" : new_item.description,
+                "price" : new_item.price,
+                "on_offer" : new_item.on_offer,
+            },
             "created_by" : current_user
         }
     except Exception as e:
         raise e    
     
 
-@app.put('/items/{item_id}',response_model=Item,status_code=status.HTTP_200_OK)
+@app.put('/items/{item_id}', status_code=status.HTTP_200_OK)
 def updateItem(item_id:int,item:Item, jwtToken:AuthJWT=Depends()):
     try:
         jwtToken.jwt_required()
@@ -161,7 +182,12 @@ def updateItem(item_id:int,item:Item, jwtToken:AuthJWT=Depends()):
 
         db.commit()
         return {
-            "item_updated": item_update,
+            "update_item" : {
+                "name" : item_update.name,
+                "description" : item_update.description,
+                "price" : item_update.price,
+                "on_offer" : item_update.on_offer,
+            },
             "edited_by" : current_user
         }
     except Exception as e :
@@ -182,13 +208,11 @@ def deleteItem(item_id:int,jwtToken:AuthJWT=Depends()):
         db.delete(item_delete)
         db.commit()
         
-        try:
-            remove(models.Item.id)
-        except:
-            return {
+        return {
             "item" : "item has been deleted",
             "deleted_by" : current_user
             }
+            
     except:
         return HTTPException
     

@@ -12,3 +12,9 @@ class Item(Base):
 
     def __repr__(self):
         return f"<Item name ={self.name} price={self.price}>"
+
+class User(Base):
+    __tablename__='users'
+    username=Column(String(255),nullable=False,primary_key=True)
+    password=Column(String(255),nullable=False)
+    
