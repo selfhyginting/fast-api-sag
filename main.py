@@ -81,9 +81,7 @@ def create_user(user:User):
     db_item=db.query(models.User).filter(models.User.username==user.username).first()
     if db_item is not None:
         raise HTTPException(status_code=400,detail="Item already exists")
-    #hash_password =codecs.encode(user.password)
-    #encpassword = (user.password).encode('utf-8')
-    #hash_password = bcrypt.hashpw(encpassword,bcrypt.gensalt(10)) 
+   
     hash_password=pwd_context.hash(user.password)
     new_user=models.User(
         username=user.username,
@@ -101,15 +99,6 @@ def verify_password(plain_password, hashed_password):
 @app.post('/users/login')
 def login(user:UserLogin, jwtToken:AuthJWT=Depends()):
     userlogin=db.query(models.User).filter(models.User.username==user.username).first()
-    #decpassword= (user.password).encode('utf-8')
-    """ tespass=List[User[user.username]]
-    selfhy= UserInDB(**tespass) """""" 
-    res=verify_password(user.password,tespass) """
-    
-    #temp= bcrypt.checkpw(decpassword, (userlogin.password).encode('utf-8')) 
-
-    #json_compatible_item_data = jsonable_encoder(temp)
-    #tespass=bcrypt.checkpw(decpassword,temp.encode('utf-8'))
     
     if userlogin is not None: 
         if verify_password(user.password, userlogin.password):
