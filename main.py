@@ -1,15 +1,19 @@
-
-
-from os import remove
+import bcrypt
 from fastapi import FastAPI,status,HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional,List
 from data import Session
 import models
 from fastapi_jwt_auth import AuthJWT
+from passlib.context import CryptContext
+from fastapi.encoders import jsonable_encoder
 
 app = FastAPI()
 
+#hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# tokenization
 class Settings(BaseModel):
     authjwt_secret_key:str='8f585b4ac7a1e1f76af9584e784b67089fe5ad9892876dde9273179d5de06a34'
 
@@ -29,18 +33,20 @@ class User(BaseModel):
                 "password" : "your password"
             }
         }
+    
+
 class UserLogin(BaseModel):
     username:str
     password:str
     
     class Config:
+        orm_mode=True
         schema_extra={
             "example" : {
                 "username" : "your username",
                 "password"  : "your password"
             }
         }
-
 
 class Item(BaseModel):
     id:int 
@@ -57,7 +63,7 @@ class Item(BaseModel):
                 "password" : "your password"
             }
         }
-
+    
 db=Session()
 
 @app.get('/users',response_model=List[User],status_code=status.HTTP_200_OK)
@@ -70,32 +76,51 @@ def getItemByUsername(username:str):
     user=db.query(models.User).filter(models.User.username==username).first()
     return user
 
-@app.post('/users/signup', response_model=List[User], status_code=status.HTTP_201_CREATED)
+@app.post('/users/signup', status_code=status.HTTP_201_CREATED)
 def create_user(user:User):
     db_item=db.query(models.User).filter(models.User.username==user.username).first()
     if db_item is not None:
-        raise HTTPException(status_code=400,detail="item already exists")
-    
+        raise HTTPException(status_code=400,detail="Item already exists")
+    #hash_password =codecs.encode(user.password)
+    #encpassword = (user.password).encode('utf-8')
+    #hash_password = bcrypt.hashpw(encpassword,bcrypt.gensalt(10)) 
+    hash_password=pwd_context.hash(user.password)
     new_user=models.User(
         username=user.username,
-        password=user.password
+        password=hash_password
     )
     db.add(new_user)
     db.commit()
 
-    return "user is created"
+    return hash_password
 
+def verify_password(plain_password, hashed_password):
+    if (pwd_context.verify(plain_password, hashed_password)):
+        return True
+        
 @app.post('/users/login')
 def login(user:UserLogin, jwtToken:AuthJWT=Depends()):
-    userlogin=db.query(models.User).filter(models.User.username==user.username, models.User.password==user.password).first()
-    if userlogin is not None:
-        access_token=jwtToken.create_access_token(subject=user.username)
-        refresh_token=jwtToken.create_refresh_token(subject=user.username)
-        return {
-            "access_token" :access_token,
-            "refresh_token" :refresh_token
-        }
-    raise HTTPException(status_code=401,detail="invalid username or password")
+    userlogin=db.query(models.User).filter(models.User.username==user.username).first()
+    #decpassword= (user.password).encode('utf-8')
+    """ tespass=List[User[user.username]]
+    selfhy= UserInDB(**tespass) """""" 
+    res=verify_password(user.password,tespass) """
+    
+    #temp= bcrypt.checkpw(decpassword, (userlogin.password).encode('utf-8')) 
+
+    #json_compatible_item_data = jsonable_encoder(temp)
+    #tespass=bcrypt.checkpw(decpassword,temp.encode('utf-8'))
+    
+    if userlogin is not None: 
+        if verify_password(user.password, userlogin.password):
+            access_token=jwtToken.create_access_token(subject=user.username)
+            refresh_token=jwtToken.create_refresh_token(subject=user.username)
+            return {
+                "access_token" :access_token,
+                "refresh_token" :refresh_token
+            } 
+        raise HTTPException(status_code=401,detail="Invalid username or password")
+    raise HTTPException(status_code=401,detail="Invalid username or password")
 
 @app.get('/new_token')
 def create_NewToken(jwtToken:AuthJWT=Depends()):
@@ -138,7 +163,7 @@ def createItem(item:Item, jwtToken:AuthJWT=Depends()):
         db_item=db.query(models.Item).filter(models.Item.name==item.name).first()
 
         if db_item is not None:
-            raise HTTPException(status_code=400,detail="item already exists")
+            raise HTTPException(status_code=400,detail="Item already exists")
         
         new_item=models.Item(
             id=item.id,
